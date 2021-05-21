@@ -1,18 +1,39 @@
 import bs4, requests
 import re
-import pandas as pd
+import prettytable as pt
+import telegram
+
+import conf.local.credentials as credentials
+import conf.base.config as config
 
 
 def clean_string(string):
+    string = string.strip()
     string = string.replace("\n", "")
     string = string.replace("\xa0", "")
     string = re.sub(r' +', ' ', string)
     string = string.split('(PDF')[0]
-    return string.strip()
+    if string == '-':
+        string = string.replace("-", "")
+    return string
+
+
+def create_table(columns, data):
+    table = pt.PrettyTable(columns)
+
+    for row in data:
+        table.add_row(row)
+
+    return table
+
+
+def truncate_parse_table(table, fields):
+    table = f'```{table.get_string(fields=fields)}```'
+    return table
 
 
 # download page data
-getPage = requests.get('https://www.hdb.gov.sg/cs/infoweb/residential/renting-a-flat/renting-from-hdb/parenthood-provisional-housing-schemepphs/application-procedure/flats-available-for-application-')
+getPage = requests.get(config.site_url)
 getPage.raise_for_status()
 
 # parse html
@@ -43,10 +64,14 @@ for i in range(len(body[0])):
         col_new.append(col_names[j])
         j+=1
     elif body[0][i] != '' and body[0][i+1] != '':
-        col_new.append('Available - '+body[0][i])
+        col_new.append(body[0][i])
     else:
-        col_new.append('Available - '+body[0][i])
+        col_new.append(body[0][i])
         j+=1
 
-df = pd.DataFrame(data=body[1:], columns=col_new)
-print(df)
+# send table
+# print(create_table(col_new, body[1:]))
+# requests.get(f"https://api.telegram.org/bot{credentials.token}/sendMessage?chat_id={credentials.chat_id}&parse_mode=ParseMode.Markdown&text={create_table(col_new, body[1:])}")
+bot = telegram.Bot(credentials.token)
+msg = str(truncate_parse_table(create_table(col_new, body[1:]), config.fields)+'\n\n```'+config.site_url+'```')
+bot.send_message(credentials.chat_id, msg, parse_mode=telegram.ParseMode.MARKDOWN_V2)
