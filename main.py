@@ -28,7 +28,10 @@ def create_table(columns, data):
 
 
 def truncate_parse_table(table, fields):
-    table = f'```{table.get_string(fields=fields)}```'
+    table = f'<pre>{table.get_string(fields=fields)}</pre>'
+    url = f'<a href="{config.site_url}">HDB PPHS Site</a>'
+    table = str(table+'\n\n'+url)
+
     return table
 
 
@@ -73,5 +76,6 @@ for i in range(len(body[0])):
 # print(create_table(col_new, body[1:]))
 # requests.get(f"https://api.telegram.org/bot{credentials.token}/sendMessage?chat_id={credentials.chat_id}&parse_mode=ParseMode.Markdown&text={create_table(col_new, body[1:])}")
 bot = telegram.Bot(credentials.token)
-msg = str(truncate_parse_table(create_table(col_new, body[1:]), config.fields)+'\n\n```'+config.site_url+'```')
-bot.send_message(credentials.chat_id, msg, parse_mode=telegram.ParseMode.MARKDOWN_V2)
+msg = truncate_parse_table(create_table(col_new, body[1:]), config.fields)
+print(msg)
+bot.send_message(credentials.chat_id, msg, parse_mode=telegram.ParseMode.HTML)
