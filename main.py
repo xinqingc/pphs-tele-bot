@@ -1,7 +1,9 @@
-import bs4, requests
+import bs4
+import requests
 import re
 import prettytable as pt
 import telegram
+import datetime
 
 import conf.local.credentials as credentials
 import conf.base.config as config
@@ -27,10 +29,35 @@ def create_table(columns, data):
     return table
 
 
+def convert_month(month):
+    month_dict = {
+        1: 'January',
+        2: 'February',
+        3: 'March',
+        4: 'April',
+        5: 'May',
+        6: 'June',
+        7: 'July',
+        8: 'August',
+        9: 'September',
+        10: 'October',
+        11: 'November',
+        12: 'December'
+    }
+    if month == 13:
+        month = month_dict[1]
+    else:
+        month = month_dict[month]
+    return month
+
+
 def truncate_parse_table(table, fields):
     table = f'<pre>{table.get_string(fields=fields)}</pre>'
-    url = f'<a href="{config.site_url}">HDB PPHS Site</a>'
-    table = str(table+'\n\n'+url)
+    curr_month = convert_month(datetime.datetime.now().month)
+    next_month = convert_month(datetime.datetime.now().month + 1)
+    desc = f'<b>{curr_month} application for {next_month} selection</b>'
+    url = f'<a href="{config.site_url}">{desc}</a>'
+    table = str(table+'\n'+url)
 
     return table
 
@@ -65,17 +92,18 @@ j = 0
 for i in range(len(body[0])):
     if body[0][i] == '':
         col_new.append(col_names[j])
-        j+=1
+        j += 1
     elif body[0][i] != '' and body[0][i+1] != '':
         col_new.append(body[0][i])
     else:
         col_new.append(body[0][i])
-        j+=1
+        j += 1
 
 # send table
 # print(create_table(col_new, body[1:]))
-# requests.get(f"https://api.telegram.org/bot{credentials.token}/sendMessage?chat_id={credentials.chat_id}&parse_mode=ParseMode.Markdown&text={create_table(col_new, body[1:])}")
+# requests.get(
+#     f"https://api.telegram.org/bot{credentials.token}/sendMessage?chat_id={credentials.chat_id}&parse_mode=ParseMode.Markdown&text={create_table(col_new, body[1:])}"
+#     )
 bot = telegram.Bot(credentials.token)
 msg = truncate_parse_table(create_table(col_new, body[1:]), config.fields)
-print(msg)
 bot.send_message(credentials.chat_id, msg, parse_mode=telegram.ParseMode.HTML)
