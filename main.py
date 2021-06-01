@@ -1,12 +1,10 @@
-from logging import raiseExceptions
 import bs4
 import requests
 import re
 import prettytable as pt
-import telegram
 import datetime
 import pandas as pd
-import numpy as np
+# import telegram
 
 import conf.local.credentials as credentials
 import conf.base.config as config
@@ -169,7 +167,7 @@ for idx, val in enumerate(street_list):
                 break
 
 df['street'] = street_list
-df['temp_index'] = np.arange(len(df))
+df['temp_index'] = list(range(len(df)))
 
 new_rent_df = pd.DataFrame(columns=[
     'temp_index',
@@ -206,11 +204,15 @@ df = df.merge(
     on='temp_index')
 df = df[col_names]
 
-# send table
-# print(pretty_table(col_new, body))
-# requests.get(
-#     f"https://api.telegram.org/bot{credentials.token}/sendMessage?chat_id={credentials.chat_id}&parse_mode=ParseMode.Markdown&text={pretty_table(col_new, body)}"
-#     )
-bot = telegram.Bot(credentials.token)
 msg = truncate_format_message(pretty_table(df), config.fields)
-bot.send_message(credentials.chat_id, msg, parse_mode=telegram.ParseMode.HTML)
+
+# send table
+requests.get(
+    f"https://api.telegram.org/bot{credentials.token}/sendMessage?chat_id={credentials.chat_id}&parse_mode=html&text={msg}"
+    )
+# bot = telegram.Bot(credentials.token)
+# bot.send_message(
+#     credentials.chat_id,
+#     msg,
+#     parse_mode=telegram.ParseMode.HTML
+# )

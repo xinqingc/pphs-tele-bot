@@ -1,5 +1,5 @@
 # insert token of bot here
-# token =
+token =
 
 # insert chat_id here
-# chat_id =
+chat_id =
