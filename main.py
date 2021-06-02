@@ -4,6 +4,7 @@ import re
 import prettytable as pt
 import datetime
 import pandas as pd
+import os
 # import telegram
 
 import conf.local.credentials as credentials
@@ -13,7 +14,8 @@ import conf.base.config as config
 def clean_string(string):
     string = string.strip()
     string = string.replace("\n", " ")
-    string = string.replace("\xa0", "")
+    string = string.replace("\xa0", " ")
+    string = string.replace(" Ave ", " Avenue ")
     string = re.sub(r' +', ' ', string)
     string = string.split('(PDF')[0]
     if string == '-':
@@ -67,10 +69,8 @@ def truncate_format_message(table, fields):
 def get_table(type):
     if type == 'available':
         url = config.site_url
-        row_len = 7
     elif type == 'rent':
         url = config.rent_url
-        row_len = 4
 
     # download page
     getPage = requests.get(url)
@@ -86,6 +86,18 @@ def get_table(type):
         if next_month not in header:
             raise Exception('Table not updated yet!')
 
+    # check if code already run this month
+    try:
+        mtime = datetime.datetime.fromtimestamp(os.path.getmtime('data/SUCCESS.txt'))
+        if mtime > datetime.datetime.now().replace(
+            minute=0,
+            hour=0,
+            second=0,
+            day=1
+        ):
+            raise Exception('Table not updated yet!')
+    except OSError:
+        pass
     soup = soup.find('table')
 
     # table headers
@@ -99,6 +111,8 @@ def get_table(type):
     body_html = soup.find('tbody').find_all('tr')
     for i in range(len(body_html)):
         row = []
+        if i == 0:
+            row_len = len(body_html[i].find_all('td'))
         for j in range(len(body_html[i].find_all('td'))):
             row.append(clean_string(body_html[i].find_all('td')[j].text))
         if len(row) < row_len:
@@ -129,7 +143,10 @@ def get_table(type):
 
 
 def concat_avail_rent(row_available, row_rent, room_num):
-    row_available = row_available[f'{int(room_num)}-room']
+    try:
+        row_available = row_available[f'{int(room_num)}-room']
+    except KeyError:
+        return ''
     row_rent = row_rent[f'{int(room_num)}-room']
     if row_available != '':
         concat_string = f"{row_available} - {row_rent}"
@@ -197,19 +214,24 @@ for index, row in df.iterrows():
         else:
             pass
 
-df = df.drop(columns=['2-room', '3-room', '4-room'])
+df = df.drop(columns=['2-room', '3-room', '4-room'], axis=1, errors='ignore')
 df = df.merge(
     new_rent_df[['temp_index', '2-room', '3-room', '4-room']],
     how='left',
     on='temp_index')
 df = df[col_names]
 
-msg = truncate_format_message(pretty_table(df), config.fields)
+df = df.loc[:, (df != "").any(axis=0)]
+fields = config.fields.copy()
+[fields.remove(col) for col in config.fields if col not in list(df.columns)]
+
+msg = truncate_format_message(pretty_table(df), fields)
 
 # send table
 requests.get(
     f"https://api.telegram.org/bot{credentials.token}/sendMessage?chat_id={credentials.chat_id}&parse_mode=html&text={msg}"
     )
+open('data/SUCCESS.txt', 'w+').close()
 # bot = telegram.Bot(credentials.token)
 # bot.send_message(
 #     credentials.chat_id,
