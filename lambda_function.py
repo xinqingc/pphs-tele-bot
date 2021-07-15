@@ -9,7 +9,7 @@ import boto3
 
 import conf.base.config as config
 
-clw = boto3.client('logs')
+client = boto3.client('logs')
 
 
 def clean_string(string):
@@ -146,7 +146,20 @@ def concat_avail_rent(row_available, row_rent, room_num):
 
 def lambda_handler(event, context):
     LogGroupName = os.environ['log_group']
-    filteredLogs = clw.filter_log_events(logGroupName=LogGroupName)
+    stream_response = client.describe_log_streams(
+        logGroupName=LogGroupName,
+        orderBy='LastEventTime',  # For the latest events
+        descending=True,
+        limit=1
+        )
+
+    latestlogStreamName = stream_response["logStreams"][0]["logStreamName"]
+
+    filteredLogs = client.get_log_events(
+        logGroupName=LogGroupName,
+        logStreamName=latestlogStreamName,
+    )
+
     print('Previous log:', clean_string(filteredLogs['events'][-3]['message']))
     # check log date
     mtime = int(str(filteredLogs['events'][-1]['timestamp'])[:-3])
@@ -159,7 +172,7 @@ def lambda_handler(event, context):
         second=0,
         day=1
     ) and 'Success!' in filteredLogs['events'][-3]['message']:
-        print('Success!')
+        print('Table sent already. Success!')
         return 200
 
     # if no log date this month or table not updated yet this month,
@@ -237,6 +250,8 @@ def lambda_handler(event, context):
     df = df.loc[:, (df != "").any(axis=0)]
     fields = config.fields.copy()
     [fields.remove(col) for col in config.fields if col not in list(df.columns)]
+    rooms = [col for col in config.fields if 'room' in str(col)]
+    df = df[df.loc[:, rooms].ne('').all(axis=1)]
 
     msg = truncate_format_message(pretty_table(df), fields)
 

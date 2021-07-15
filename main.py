@@ -86,18 +86,6 @@ def get_table(type):
         if next_month not in header:
             raise Exception('Table not updated yet!')
 
-    # check if code already run this month
-    try:
-        mtime = datetime.datetime.fromtimestamp(os.path.getmtime('data/SUCCESS.txt'))
-        if mtime > datetime.datetime.now().replace(
-            minute=0,
-            hour=0,
-            second=0,
-            day=1
-        ):
-            raise Exception('Table not updated yet!')
-    except OSError:
-        pass
     soup = soup.find('table')
 
     # table headers
@@ -155,86 +143,120 @@ def concat_avail_rent(row_available, row_rent, room_num):
     return concat_string
 
 
-col_names, _, df = get_table('available')
-_, _, rent_df = get_table('rent')
+def logs_check():
+    # check if code already run this month
+    try:
+        mtime = datetime.datetime.fromtimestamp(
+            os.path.getmtime('data/SUCCESS.txt')
+        )
+        if mtime > datetime.datetime.now().replace(
+            minute=0,
+            hour=0,
+            second=0,
+            day=1
+        ):
+            raise Exception('Table not updated yet!')
+    except OSError:
+        pass
 
-# convert address to street name
-street_list = df['Address'].to_list()
-for idx, val in enumerate(street_list):
-    val = val.split(' ')
-    # clean address
-    if 'Dr' in val:
-        val[val.index('Dr')] = 'Drive'
-    if 'Ave' in val:
-        val[val.index('Ave')] = 'Avenue'
-    if 'Rd' in val:
-        val[val.index('Rd')] = 'Road'
-    if 'Payoh' in val:
-        val = ['Toa', 'Payoh']
-    for x, y in enumerate(val):
-        # skip first word in address, probably 'Blk' or blk number
-        if x == 0:
-            pass
-        else:
-            # skip blk number or '&'
-            if y[0].isdigit() or y == '&':
+
+def main():
+    # check log date
+    logs_check()
+
+    # if no log date this month or table not updated yet this month,
+    # run function
+    col_names, _, df = get_table('available')
+    _, _, rent_df = get_table('rent')
+
+    # convert address to street name
+    street_list = df['Address'].to_list()
+    for idx, val in enumerate(street_list):
+        val = val.split(' ')
+        # clean address
+        if 'Dr' in val:
+            val[val.index('Dr')] = 'Drive'
+        if 'Ave' in val:
+            val[val.index('Ave')] = 'Avenue'
+        if 'Rd' in val:
+            val[val.index('Rd')] = 'Road'
+        if 'Payoh' in val:
+            val = ['Toa', 'Payoh']
+        for x, y in enumerate(val):
+            # skip first word in address, probably 'Blk' or blk number
+            if x == 0:
                 pass
             else:
-                street_list[idx] = ' '.join(val[x:])
+                # skip blk number or '&'
+                if y[0].isdigit() or y == '&':
+                    pass
+                else:
+                    street_list[idx] = ' '.join(val[x:])
+                    break
+
+    df['street'] = street_list
+    df['temp_index'] = list(range(len(df)))
+
+    new_rent_df = pd.DataFrame(columns=[
+        'temp_index',
+        'Location',
+        '2-room',
+        '3-room',
+        '4-room'
+    ])
+
+    for index, row in df.iterrows():
+        row_list = [row['temp_index']]
+        for x, y in rent_df.iterrows():
+            if row['street'].lower() in y['Location'].lower():
+                row_list.append(y['Location'])
+                row_list.append(concat_avail_rent(row, y, 2))
+                row_list.append(concat_avail_rent(row, y, 3))
+                row_list.append(concat_avail_rent(row, y, 4))
+                row_list = pd.DataFrame([row_list], columns=[
+                    'temp_index',
+                    'Location',
+                    '2-room',
+                    '3-room',
+                    '4-room'
+                ])
+                new_rent_df = new_rent_df.append(row_list)
                 break
+            else:
+                pass
 
-df['street'] = street_list
-df['temp_index'] = list(range(len(df)))
-
-new_rent_df = pd.DataFrame(columns=[
-    'temp_index',
-    'Location',
-    '2-room',
-    '3-room',
-    '4-room'
-])
-
-for index, row in df.iterrows():
-    row_list = [row['temp_index']]
-    for x, y in rent_df.iterrows():
-        if row['street'].lower() in y['Location'].lower():
-            row_list.append(y['Location'])
-            row_list.append(concat_avail_rent(row, y, 2))
-            row_list.append(concat_avail_rent(row, y, 3))
-            row_list.append(concat_avail_rent(row, y, 4))
-            row_list = pd.DataFrame([row_list], columns=[
-                'temp_index',
-                'Location',
-                '2-room',
-                '3-room',
-                '4-room'
-            ])
-            new_rent_df = new_rent_df.append(row_list)
-            break
-        else:
-            pass
-
-df = df.drop(columns=['2-room', '3-room', '4-room'], axis=1, errors='ignore')
-df = df.merge(
-    new_rent_df[['temp_index', '2-room', '3-room', '4-room']],
-    how='left',
-    on='temp_index')
-df = df[col_names]
-
-df = df.loc[:, (df != "").any(axis=0)]
-fields = config.fields.copy()
-[fields.remove(col) for col in config.fields if col not in list(df.columns)]
-
-msg = truncate_format_message(pretty_table(df), fields)
-
-# send table
-requests.get(
-    f"https://api.telegram.org/bot{credentials.token}/sendMessage?chat_id={credentials.chat_id}&parse_mode=html&text={msg}"
+    df = df.drop(
+        columns=['2-room', '3-room', '4-room'],
+        axis=1,
+        errors='ignore'
     )
-open('data/SUCCESS.txt', 'w+').close()
+    df = df.merge(
+        new_rent_df[['temp_index', '2-room', '3-room', '4-room']],
+        how='left',
+        on='temp_index')
+    df = df[col_names]
+
+    df = df.loc[:, (df != "").any(axis=0)]
+    fields = config.fields.copy()
+    [fields.remove(col) for col in config.fields if col not in list(df.columns)]
+    rooms = [col for col in config.fields if 'room' in str(col)]
+    df = df[df.loc[:, rooms].ne('').all(axis=1)]
+
+    msg = truncate_format_message(pretty_table(df), fields)
+
+    # send table
+    requests.get(
+        f"https://api.telegram.org/bot{credentials.token}/sendMessage?chat_id={credentials.chat_id}&parse_mode=html&text={msg}"
+        )
+    open('data/SUCCESS.txt', 'w+').close()
+    return 200
+
 # bot = telegram.Bot(credentials.token)
 # bot.send_message(
 #     credentials.chat_id,
 #     msg,
 #     parse_mode=telegram.ParseMode.HTML
 # )
+
+
+main()
